@@ -1,0 +1,305 @@
+---
+title: "Rendimento médio real no Ceará: Uma investigação utilizando VAR/VEC"
+author: "Francisco Alexandre"
+date: "2023-12-13"
+output:
+  pdf_document:
+  word_document: default
+  html_document: default
+  latex_engine: xelatex
+---
+Email:
+[[alecorreia94\@alu.ufc.br](mailto:alecorreia94@alu.ufc.br){.email}]\
+
+GitHub: [<https://github.com/alecorreia94/Time-series-analysis-VAR_VEC>]
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message = FALSE)
+```
+
+
+```{r limpa memoria, include=FALSE}
+#Limpeza da memória do R
+rm(list = ls())
+```
+
+```{r bibliotecas}
+# Bibliotecas utilizadas no estudo:
+library(dplyr)
+library(urca)
+library(forecast)
+library(ipeadatar)
+library(vars)
+library(readxl)
+```
+
+## Introdução
+
+As variáveis de ocupação e rendimento médio e inp(Índice nacional de preço ao consumidor) que mede a variação de preços de uma cesta de produtos e serviços a partir da perspectiva das famílias de baixa renda, que têm rendimento médio de 1 a 5 salários mínimos. Foram obtidas na base de dados do IPECE(Instituto de Pesquisa Economica do Ceará ), ipecedata, enquanto que a variavel salario minimo real foi encontrada no ipeadata.
+
+O primeiro passo da coleta foi inserir essas variaveis de mesmo tamanho e mesma periodicidade em uma planilha do excel, Após a coleta e tabulação desses dados a base foi carregada no software R.
+
+```{r read data }
+# Use a função read_excel para importar os dados da planilha "dados"
+caminho <- "G:/Meu Drive/DOUTORADO/ECONOMETRIA II/TRABALHO FINAL/Dados/dados.xlsx"
+dados<-readxl::read_excel(caminho, sheet = "dados")
+```
+
+```{r deflacionando}
+#deflacionamento do rendimento
+rendimento_real <- dados$rendimento_medio / (1 + dados$inpc)
+dados$rendimento_medio_real <- rendimento_real
+```
+
+Depois de deflacionada a variavel de rendimento médio buscou-se analisar os dados, dessa forma, optou-se por gerar box plots das variaveis a fim de identificar possiveis outliers.
+
+```{r boxplot}
+rendimento_real_value <- dados$rendimento_medio_real
+inpc_value <- dados$inpc
+ocup_value <- dados$ocupacao
+sm_value <- dados$salario_minimo_real
+par(mfrow=c(2, 2))
+boxplot(rendimento_real_value)
+title("Rendimento medio real")
+boxplot(inpc_value)
+title("INPC")
+boxplot(ocup_value)
+title("Ocupacao")
+boxplot(sm_value)
+title("Salario minimo real")
+```
+
+Apenas a variavel de ocupação possui uma unica observação abaixo dos valores, no entanto, optou-se por não excluí-la e nem modificá-la a fim de na trazer mais prejuizos a análise, e também por seu valor nao ser tao abaixo do menor valor definido no grafico de box plot.
+
+```{r outliers}
+#testando outliers
+boxplot.stats (rendimento_real_value, coef = 1.5, do.conf = TRUE, do.out = TRUE)
+boxplot.stats (inpc_value, coef = 1.5, do.conf = TRUE, do.out = TRUE)
+boxplot.stats (ocup_value, coef = 1.5, do.conf = TRUE, do.out = TRUE)
+boxplot.stats (sm_value, coef = 1.5, do.conf = TRUE, do.out = TRUE)
+
+```
+## Séries temporais analizadas
+
+```{r series}
+#séries temporais
+
+serie_rend = ts(dados$rendimento_medio_real, start = c(2014,01), frequency = 4)
+serie_inpc = ts(dados$inpc, start = c(2014,01), frequency = 4)
+serie_ocup = ts(dados$ocupacao, start = c(2014,01), frequency = 4)
+serie_sm = ts(dados$salario_minimo_real, start = c(2014,01), frequency = 4)
+
+par(mfrow=c(2, 2))
+# Cria um vetor de datas para o eixo x
+datas <- seq(as.Date("2014-01-01"), as.Date("2021-12-01"), by = "quarter")
+
+
+# Cria o gráfico de séries temporais
+plot.ts(dados$rendimento_medio_real, main = "Rendimento médio real",
+        xaxt = "n", ylab = "Rendimento Real Medio", xlab = "Tempo (Trimestres)")
+
+# Personalize o eixo x
+axis(1, at = 1:length(datas), labels = format(datas, "%Y"), tick = TRUE, las = 2,cex.axis = 0.55)
+
+# Cria o gráfico de séries temporais
+plot.ts(dados$inpc, main = "INPC",
+        xaxt = "n", ylab = "INPC", xlab = "Tempo (Trimestres)")
+
+# Personalize o eixo x
+axis(1, at = 1:length(datas), labels = format(datas, "%Y"), tick = TRUE, las = 2,cex.axis = 0.55)
+
+# Cria o gráfico de séries temporais
+plot.ts(dados$ocupacao, main = "Ocupação",
+        xaxt = "n", ylab = "Ocupação", xlab = "Tempo (Trimestres)")
+
+# Personalize o eixo x
+axis(1, at = 1:length(datas), labels = format(datas, "%Y"), tick = TRUE, las = 2,cex.axis = 0.55)
+
+# Cria o gráfico de séries temporais
+plot.ts(dados$salario_minimo_real, main = "Salário mínimo real",
+        xaxt = "n", ylab = "Salário mínimo real", xlab = "Tempo (Trimestres)")
+
+# Personalize o eixo x
+axis(1, at = 1:length(datas), labels = format(datas, "%Y"), tick = TRUE, las = 2,cex.axis = 0.55)
+```
+
+
+Pela análise visual das séries não observa-se flutuaçãos condizentes com sazonalidade ou tendência. Mas cabe uma análise mais profunda dos dados para verificarmos isso. Abaixo temos o correlograma das séries.
+
+### Correlogramas
+
+```{r correlogramas}
+par(mfrow=c(2, 2))
+
+#correlogramas
+
+rend_FAC <- acf(serie_rend, lag=32, main="Rendimento médio real" )
+rend_FACP <- pacf(serie_rend, lag=32, main="Rendimento médio real")
+
+inpc_FAC <- acf(serie_inpc, lag=32, main="INPC")
+inpc_FACP <- pacf(serie_inpc, lag=32, main="INPC")
+
+ocup_FAC <- acf(serie_ocup, lag=32, main="Ocupação")
+ocup_FACP <- pacf(serie_ocup, lag=32, main="Ocupação")
+
+sm_FAC <- acf(serie_sm, lag=32, main="Salário mínimo real")
+sm_FACP <- pacf(serie_sm, lag=32, main="Salário mínimo real")
+```
+
+Nota-se que não há picos periódicos significativos nos correlogramas e portanto não parece ter nenhum tipo de sazonalidade identificada. No entanto, ao fazer a decomposição da série percebe-se sazonalidade em todas as séries e tendênca na série de salário mínimo.
+
+### Decomposição das Séries
+
+```{r decomposicao series}
+
+# decomposição pelo X11 do Census Bureau
+library(seasonal)
+fit <- seas(serie_rend, x11 = "")
+library(fpp2)
+autoplot(fit) + ggtitle("Decomposição X11 do rendimento médio")
+
+# decomposição pelo X11 do Census Bureau
+library(seasonal)
+fit <- seas(serie_inpc, x11 = "")
+library(fpp2)
+autoplot(fit) + ggtitle("Decomposição X11 da inpc")
+
+# decomposição pelo X11 do Census Bureau
+library(seasonal)
+fit <- seas(serie_ocup, x11 = "")
+library(fpp2)
+autoplot(fit) + ggtitle("Decomposição X11 da ocupação")
+
+# decomposição pelo X11 do Census Bureau
+library(seasonal)
+fit <- seas(serie_sm, x11 = "")
+library(fpp2)
+autoplot(fit) + ggtitle("Decomposição X11 do salário mínimo")
+```
+
+Agora para sanar todas as dúvidas precisa-se testar se há alguma tendência nessas séries Para isso, usa-se o teste estatístico abaixo.
+
+### Teste de Tendência
+
+```{r testando tendencia}
+library(trend)
+library(Kendall)
+mk.test(serie_rend)
+mk.test(serie_inpc)
+mk.test(serie_ocup)
+mk.test(serie_sm)
+```
+
+Apenas a variável de salário mínimo real apresenta tendência definida através do teste de Mann_Kendall, é o unico que rejeita a hipotese nula de não tendência.
+
+Desse modo, agora vamos aos testes para decidir entre estimar um VAR ou um VEC. Para isso, primeiro verifica-se a hipótese de raiz unitaria das séries.
+
+
+### Teste de Raiz Unitária
+
+```{r testando ru}
+ur_rendimento <- ur.df(y = serie_rend, lags = 3, type = "none", selectlags = "AIC")
+ur_inpc <- ur.df(y = serie_inpc, lags = 3, type = "none", selectlags = "AIC")
+ur_ocup <- ur.df(y = serie_ocup, lags = 3, type = "none", selectlags = "AIC")
+ur_sm <- ur.df(y = serie_sm, lags = 3, type = "trend", selectlags = "AIC")
+summary(ur_rendimento)
+summary(ur_inpc)
+summary(ur_ocup)
+summary(ur_sm)
+```
+
+A hipótese nula de não estacionariedade (a série temporal de rendimento médio real contém pelo menos uma raiz unitária) não pode ser rejeitada ao nível de significância de 5%, pois a estatística de teste de -0.5572 não é mais negativa do que o valor crítico de -1.95. O mesmo se aplica as outras variáveis. Desse modo, agora pode ser identificado o número de lags.
+
+
+## Identificação
+
+```{r seleção de lags}
+library(vars)
+base <- cbind(serie_rend,serie_inpc,serie_ocup,serie_sm)
+VARselect(base, lag.max = 4, type = "both", season = 4)
+```
+
+Percebe-se que todos os critérios identificam 4 lags das variáveis em nível o que pode indicar um VAR(4). Mas antes de estimá-lo faz-se agora um teste de cointegração para entendermos se não seria melhor a utilização de VEC.
+
+### Teste de cointegração
+
+```{r teste johansen}
+library("urca")
+jotest=ca.jo(base, type="trace", K=4, ecdet="none", spec="longrun", season = 4)
+summary(jotest)
+
+```
+
+O teste do traço rejeita a hipótese nula de que há zero vetores de cointegração e dessa forma nos mostra que em até r<=1,o valor do teste é maior que o valor crítico com um nível de confiança de 1%, indicando que existe 2 vetores de cointegração entre essas variáveis , e dessa forma, o melhor modelo a ser utilizado seria o VEC.
+
+Para determinar o número de lags foi utilizado a função VARselect que indica o número de defasagens que minimiza os
+critérios de identificação Akaike, Schwarz, Hannan-Quin. O qual observa-se acima como resultado 4 defasagens.
+
+### Modelo VEC
+
+```{r vec}
+library(tsDyn)
+vecm <- VECM(base, lag = 4, r = 2, estim = "ML")
+summary(vecm)
+```
+
+Apenas a variável de salário mínimo parece se ajustar para uma condição de equilíbrio de forma positiva, fato verificado nos coeficientes ECT1 e ECT2.
+Essas variáveis parecem ter cointegrações fracas, apenas a variável de salário mínimo possui impactos negativos e significanteses, com a renda e inpc em pelo menos 5%. exceto em ocupação que é afetada pela sua própria defasagem positivamente.
+
+Deste modo, apesar do teste de cointegração, vou rodar também um VAR(4).
+
+### Modelo VAR(4)
+
+```{r var}
+modelovar <- VAR(base, p = 4, type = "both", season = 4)
+summary(modelovar)
+
+```
+
+Através do VAR(4) podemos perceber que há impacto negativo na série de rendimento médio real através da propria defasagem dela e pelo Índice de inflação. Além disso, a variavel de inflação é afetada  positivamente pelo rendimento médio real.
+já a variavel ocupação e salário mínimo real não parece ser afetada por nenhuma das demais variaveis.
+
+No geral, muito poucos coeficientes são estatisticamente significativos em níveis convencionais (p < 0,05). Isso sugere evidências limitadas de relações fortes entre as variáveis o modelo.
+
+### Teste de autocorrelação serial
+
+```{r correlacao residuos}
+vecvar <- vec2var(jotest, r = 1)
+serial.test(vecvar, lags.pt = 15)
+```
+
+O teste de autocorrelação serial não rejeitou a hipótese nula de ausência de autocorrelação nos resíduos do modelo VECM. O valor-p de 0.9468 é maior que o nível de significância de 0,05, indicando que não há evidências de autocorrelação serial nos resíduos.
+A ausência de autocorrelação serial nos resíduos indica que o modelo está bem especificado e que as estimativas dos coeficientes são válidas. É possível realizar previsões e inferências a partir do modelo com confiança.
+
+
+### Decomposição da variância dos erros
+
+```{r decomposicao variancia}
+# Realize a decomposição da variância
+decomposicao_var <- fevd(vecvar, n.ahead = 4)
+
+# Exiba os resultados
+print(decomposicao_var)
+
+```
+
+Os resultados da decomposição da variancia dos erros sugerem que o rendimento médio tem total da sua variação explicada por ela mesma, ou seja, por choques internos. A variável do índice de preços ao consumidor e do número de pessoas ocupadas em postos de trabalho no Ceará indica que a parcela da variância destas variáveis explicada por si mesmas é relativamente pequena. Isso sugere que o índice de preços ao consumidor é mais volátil e que é mais influenciado por choques externos. As séries de ocupação e salário minimo parecem ser muito influenciadas pelas variações na série de rendimento real.
+
+### Função de impulso resposta
+
+```{r resposta ao impulso}
+# Calcule as respostas ao impulso
+impulse_inpc <- irf(vecvar, impulse = "serie_inpc", response = "serie_rend", n.ahead = 10, ortho = FALSE, runs = 1000)
+impulse_sm <- irf(vecvar, impulse = "serie_sm", response = "serie_rend", n.ahead = 10, ortho = FALSE, runs = 1000)
+impulse_ocup <- irf(vecvar, impulse = "serie_ocup", response = "serie_rend", n.ahead = 10, ortho = FALSE, runs = 1000)
+```
+
+```{r plot}
+# Plote as respostas ao impulso
+plot(impulse_inpc, main = "Resposta ao impulso da inflação no rendimento médio real")
+plot(impulse_sm, main = "Resposta ao impulso do salário mínimo real no rendimento médio real")
+plot(impulse_ocup, main = "Resposta ao impulso do número de ocupados no rendimento médio real")
+```
+
+Os resultados da função de impulso resposta sugerem que choques de inflação influenciam negativamente o rendimento real dos trabalhadores cearenses enquanto que choque no salário minimo real influenciam positivamente, isto é, uma inflação maior contribui para decréscimo no rendimento médio real dos trabalhadores, enquanto aumento de salário minimo real, isto é, acréscimos acima da inflação contribuem para melhora do rendimento real dos trabalhadores, e se usarmos rendimento médio real como proxy para distribuição de renda podemos inferir melhora na distribuição de renda. Já em relação ao número de pessoas ocupadas em postos de trabalho no ceará a resposta foi uma oscilação em torno de zero na variável de rendimento médio o que indica nenhuma influência do número de pessoas ocupadas no rendimento médio real do cearense.
+
